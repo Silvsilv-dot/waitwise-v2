@@ -1,5 +1,0 @@
-streamlit
-pandas
-psycopg2-binary
-qrcode
-Pillow
