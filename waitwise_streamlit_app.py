@@ -173,7 +173,7 @@ elif st.session_state.role == "patient":
                 st.write(f"**Reason for Visit:** {row['visit_reason']}")
                 st.write(f"**Current Status:** `{row['status']}`")
 
-                if row['status'] in ['Scheduled', 'Checked In', 'Rescheduled', 'Reschedule Requested']:
+                if row['status'] in ['Scheduled', 'Checked In']:
                     col_c1, col_c2 = st.columns(2)
                     
                     with col_c1:
@@ -203,7 +203,7 @@ elif st.session_state.role == "patient":
                                 FROM waitwise.appointments
                                 WHERE provider_id = %s 
                                   AND (start_time AT TIME ZONE 'America/New_York')::date = %s
-                                  AND status IN ('Scheduled', 'Checked In', 'Rescheduled');
+                                  AND status IN ('Scheduled', 'Checked In');
                             """, (row['provider_id'], target_date))
                             
                             booked_times = []
@@ -221,14 +221,14 @@ elif st.session_state.role == "patient":
                                     new_start_dt = datetime.combine(target_date, slot_time_obj)
                                     new_end_dt = new_start_dt + timedelta(minutes=30)
                                     
-                                    # 1. Update appointment record directly
+                                    # Update appointment date and keep status as 'Scheduled'
                                     run_query("""
                                         UPDATE waitwise.appointments 
-                                        SET start_time = %s, end_time = %s, status = 'Rescheduled', updated_at = NOW()
+                                        SET start_time = %s, end_time = %s, status = 'Scheduled', updated_at = NOW()
                                         WHERE appointment_id = %s;
                                     """, (new_start_dt, new_end_dt, row['appointment_id']), fetch=False)
                                     
-                                    # 2. Log notification using schema-compliant status ('Pending')
+                                    # Log entry in reschedule_requests with 'Pending' status
                                     run_query("""
                                         INSERT INTO waitwise.reschedule_requests 
                                         (appointment_id, patient_id, provider_id, requested_at, requested_via, reason, preferred_new_date, preferred_time_of_day, status)
@@ -336,8 +336,7 @@ elif st.session_state.role == "admin":
         schedule_df = run_query("""
             SELECT (a.start_time AT TIME ZONE 'America/New_York')::date AS visit_date,
                    COUNT(*) AS booked_slots,
-                   SUM(CASE WHEN a.status = 'Cancelled' THEN 1 ELSE 0 END) AS cancelled_slots,
-                   SUM(CASE WHEN a.status = 'Rescheduled' THEN 1 ELSE 0 END) AS rescheduled_slots
+                   SUM(CASE WHEN a.status = 'Cancelled' THEN 1 ELSE 0 END) AS cancelled_slots
             FROM waitwise.appointments a
             JOIN waitwise.providers pr ON pr.provider_id = a.provider_id
             WHERE pr.full_name = %s 
