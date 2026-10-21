@@ -228,11 +228,11 @@ elif st.session_state.role == "patient":
                                         WHERE appointment_id = %s;
                                     """, (new_start_dt, new_end_dt, row['appointment_id']), fetch=False)
                                     
-                                    # 2. Safely log notification with explicit non-null default parameters
+                                    # 2. Log notification using schema-compliant status ('Pending')
                                     run_query("""
                                         INSERT INTO waitwise.reschedule_requests 
                                         (appointment_id, patient_id, provider_id, requested_at, requested_via, reason, preferred_new_date, preferred_time_of_day, status)
-                                        VALUES (%s, %s, %s, NOW(), 'Patient Portal Direct', %s, %s, %s, 'Approved');
+                                        VALUES (%s, %s, %s, NOW(), 'Patient Portal Direct', %s, %s, %s, 'Pending');
                                     """, (row['appointment_id'], patient_id, row['provider_id'], reschedule_reason, target_date, chosen_slot), fetch=False)
                                     
                                     st.success(f"Appointment successfully rescheduled to {target_date.strftime('%b %d, %Y')} at {chosen_slot}!")
