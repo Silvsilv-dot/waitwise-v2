@@ -173,7 +173,7 @@ elif st.session_state.role == "patient":
                 st.write(f"**Reason for Visit:** {row['visit_reason']}")
                 st.write(f"**Current Status:** `{row['status']}`")
 
-                if row['status'] in ['Scheduled', 'Checked In', 'Rescheduled']:
+                if row['status'] in ['Scheduled', 'Checked In', 'Rescheduled', 'Reschedule Requested']:
                     col_c1, col_c2 = st.columns(2)
                     
                     with col_c1:
@@ -195,6 +195,8 @@ elif st.session_state.role == "patient":
                                 max_value=datetime.today().date() + timedelta(days=180),
                                 key=f"sel_date_{row['appointment_id']}"
                             )
+                            
+                            reschedule_reason = st.text_input("Reason for Rescheduling", value="Schedule preference change", key=f"reason_input_{row['appointment_id']}")
                             
                             booked_df = run_query("""
                                 SELECT (start_time AT TIME ZONE 'America/New_York')::time AS booked_time
@@ -219,17 +221,19 @@ elif st.session_state.role == "patient":
                                     new_start_dt = datetime.combine(target_date, slot_time_obj)
                                     new_end_dt = new_start_dt + timedelta(minutes=30)
                                     
+                                    # 1. Update appointment record directly
                                     run_query("""
                                         UPDATE waitwise.appointments 
                                         SET start_time = %s, end_time = %s, status = 'Rescheduled', updated_at = NOW()
                                         WHERE appointment_id = %s;
                                     """, (new_start_dt, new_end_dt, row['appointment_id']), fetch=False)
                                     
+                                    # 2. Safely log notification with explicit non-null default parameters
                                     run_query("""
                                         INSERT INTO waitwise.reschedule_requests 
-                                        (appointment_id, patient_id, provider_id, requested_at, requested_via, preferred_new_date, preferred_time_of_day, status)
-                                        VALUES (%s, %s, %s, NOW(), 'Patient Portal Direct', %s, %s, 'Directly Updated');
-                                    """, (row['appointment_id'], patient_id, row['provider_id'], target_date, chosen_slot), fetch=False)
+                                        (appointment_id, patient_id, provider_id, requested_at, requested_via, reason, preferred_new_date, preferred_time_of_day, status)
+                                        VALUES (%s, %s, %s, NOW(), 'Patient Portal Direct', %s, %s, %s, 'Approved');
+                                    """, (row['appointment_id'], patient_id, row['provider_id'], reschedule_reason, target_date, chosen_slot), fetch=False)
                                     
                                     st.success(f"Appointment successfully rescheduled to {target_date.strftime('%b %d, %Y')} at {chosen_slot}!")
                                     st.rerun()
