@@ -4,7 +4,7 @@ import pandas as pd
 import psycopg2
 import qrcode
 from io import BytesIO
-from datetime import datetime, timedelta, time
+from datetime import datetime, timedelta
 
 # -----------------------------------------------------------------------------
 # Page Configuration & Visual Theme
@@ -74,7 +74,6 @@ def run_query(query, params=None, fetch=True):
             return pd.DataFrame(records, columns=columns)
         return None
 
-# Standard Slot Generation Helper (9:00 AM - 4:30 PM, 30-min intervals)
 def generate_daily_time_slots():
     slots = []
     current = datetime.strptime("09:00", "%H:%M")
@@ -130,7 +129,6 @@ if st.session_state.role is None:
 
     with col3:
         st.markdown("### Test on Mobile")
-        # Direct URL generation for smooth mobile scanning
         try:
             public_url = st.secrets.get("PUBLIC_APP_URL", "https://waitwise-v2-pivstljaoah3xufizp8e64.streamlit.app")
         except Exception:
@@ -145,7 +143,7 @@ if st.session_state.role is None:
         st.image(buf.getvalue(), caption="Scan QR Code to Open Mobile View", width=160)
 
 # -----------------------------------------------------------------------------
-# PATIENT PORTAL (Instant Slot Booking & Rescheduling)
+# PATIENT PORTAL
 # -----------------------------------------------------------------------------
 elif st.session_state.role == "patient":
     patient_id = st.session_state.selected_patient_id
@@ -178,7 +176,6 @@ elif st.session_state.role == "patient":
                 if row['status'] in ['Scheduled', 'Checked In', 'Rescheduled']:
                     col_c1, col_c2 = st.columns(2)
                     
-                    # 1. Instant Cancellation
                     with col_c1:
                         if st.button("❌ Cancel Visit", key=f"pat_cancel_{row['appointment_id']}"):
                             run_query(
@@ -188,7 +185,6 @@ elif st.session_state.role == "patient":
                             st.success("Appointment cancelled instantly. Clinic staff notified.")
                             st.rerun()
 
-                    # 2. Direct Self-Rescheduling (No Staff Approval Queue Required)
                     with col_c2:
                         with st.popover(f"🔄 Reschedule with {row['provider']}"):
                             st.markdown(f"**Select a new date & open slot for {row['provider']}:**")
@@ -200,7 +196,6 @@ elif st.session_state.role == "patient":
                                 key=f"sel_date_{row['appointment_id']}"
                             )
                             
-                            # Query booked slots on selected date for this doctor to determine availability
                             booked_df = run_query("""
                                 SELECT (start_time AT TIME ZONE 'America/New_York')::time AS booked_time
                                 FROM waitwise.appointments
@@ -220,19 +215,16 @@ elif st.session_state.role == "patient":
                                 chosen_slot = st.selectbox("Select Open Time Slot:", available_slots, key=f"slot_{row['appointment_id']}")
                                 
                                 if st.button("Confirm & Instantly Update Appointment", key=f"btn_resch_{row['appointment_id']}", type="primary"):
-                                    # Combine target_date and chosen_slot into timestamp
                                     slot_time_obj = datetime.strptime(chosen_slot, "%I:%M %p").time()
                                     new_start_dt = datetime.combine(target_date, slot_time_obj)
                                     new_end_dt = new_start_dt + timedelta(minutes=30)
                                     
-                                    # Update appointment directly in database
                                     run_query("""
                                         UPDATE waitwise.appointments 
                                         SET start_time = %s, end_time = %s, status = 'Rescheduled', updated_at = NOW()
                                         WHERE appointment_id = %s;
                                     """, (new_start_dt, new_end_dt, row['appointment_id']), fetch=False)
                                     
-                                    # Insert notification log for staff view
                                     run_query("""
                                         INSERT INTO waitwise.reschedule_requests 
                                         (appointment_id, patient_id, provider_id, requested_at, requested_via, preferred_new_date, preferred_time_of_day, status)
@@ -247,12 +239,11 @@ elif st.session_state.role == "patient":
         st.info("No active or past appointments found for this account.")
 
 # -----------------------------------------------------------------------------
-# ADMIN & STAFF PORTAL (Graphical Real-Time Data Capture & Notifications)
+# ADMIN & STAFF PORTAL
 # -----------------------------------------------------------------------------
 elif st.session_state.role == "admin":
     st.markdown('<div class="main-header">Albany Health Center — Staff Control Dashboard</div>', unsafe_allow_html=True)
     
-    # Live Real-Time Cancellation & Patient Reschedule Notification Banner
     st.markdown("### 🔔 Real-Time Patient Activity Notifications (Last 24 Hours)")
     
     notif_col1, notif_col2 = st.columns(2)
@@ -295,7 +286,6 @@ elif st.session_state.role == "admin":
         "👥 Albany Appointments Directory"
     ])
 
-    # --- TAB 1: Graphical Real-Time Visual Capture ---
     with admin_tab1:
         st.subheader("Live Operational Analytics & Visual Capture")
         
@@ -308,7 +298,6 @@ elif st.session_state.role == "admin":
         st.markdown("---")
         g_col1, g_col2 = st.columns(2)
 
-        # Chart 1: Status Distribution Bar Chart
         with g_col1:
             st.markdown("#### Appointment Status Breakdown")
             status_counts = run_query("""
@@ -319,7 +308,6 @@ elif st.session_state.role == "admin":
             if status_counts is not None and not status_counts.empty:
                 st.bar_chart(status_counts.set_index("status"))
 
-        # Chart 2: Provider Visit Load Chart
         with g_col2:
             st.markdown("#### Patient Volume by Albany Doctor")
             provider_load = run_query("""
@@ -331,7 +319,6 @@ elif st.session_state.role == "admin":
             if provider_load is not None and not provider_load.empty:
                 st.bar_chart(provider_load.set_index("doctor"))
 
-    # --- TAB 2: 6-Month Interactive Calendar ---
     with admin_tab2:
         st.subheader("6-Month Provider Availability Calendar")
         
@@ -362,7 +349,6 @@ elif st.session_state.role == "admin":
         else:
             st.info("No booked visits found in this 6-month window.")
 
-    # --- TAB 3: Master Directory ---
     with admin_tab3:
         st.subheader("Master Albany Clinic Appointments")
         all_appts = run_query("""
